@@ -245,3 +245,18 @@ export interface YearSummary {
   kota: string;
   updatedAt: string;
 }
+
+export type UserRole = 'admin' | 'petugas';
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  fullName: string;
+  role: UserRole;
+  kelurahanIdx: number | null;
+}
+
+export interface UserRecord extends AuthUser {
+  createdAt: string;
+}
+

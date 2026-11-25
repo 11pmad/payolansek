@@ -4,15 +4,18 @@ import {
   ClipboardEdit,
   Download,
   FileSpreadsheet,
+  LogOut,
   Settings,
   Table2,
   Upload,
 } from 'lucide-react';
-import type { YearSummary } from '../../shared/types.js';
+import { KELURAHAN_LIST, type AuthUser, type YearSummary } from '../../shared/types.js';
 
 export type NavTab = 'dashboard' | 'input' | 'table' | 'settings';
 
 interface AppHeaderProps {
+  user: AuthUser;
+  onLogout: () => void;
   activeTab: NavTab;
   onChangeTab: (tab: NavTab) => void;
   years: YearSummary[];
@@ -33,6 +36,8 @@ const NAV_ITEMS: Array<{ id: NavTab; label: string; icon: typeof BarChart3 }> = 
 ];
 
 export function AppHeader({
+  user,
+  onLogout,
   activeTab,
   onChangeTab,
   years,
@@ -45,6 +50,12 @@ export function AppHeader({
   isImporting,
 }: AppHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const roleLabel =
+    user.role === 'admin'
+      ? 'Admin Puskesmas'
+      : user.kelurahanIdx !== null
+        ? `Petugas • ${KELURAHAN_LIST[user.kelurahanIdx]?.name ?? ''}`
+        : 'Petugas Puskesmas';
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
@@ -81,28 +92,32 @@ export function AppHeader({
               ))}
             </select>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx"
-              className="hidden"
-              aria-label="Pilih file Excel untuk diimport"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImportFile(file);
-                e.currentTarget.value = '';
-              }}
-            />
+            {user.role === 'admin' && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx"
+                  className="hidden"
+                  aria-label="Pilih file Excel untuk diimport"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) onImportFile(file);
+                    e.currentTarget.value = '';
+                  }}
+                />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isImporting}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/30 disabled:opacity-50"
-            >
-              <Upload className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              <span>{isImporting ? 'Mengimpor...' : 'Import Excel'}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/30 disabled:opacity-50"
+                >
+                  <Upload className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                  <span>{isImporting ? 'Mengimpor...' : 'Import Excel'}</span>
+                </button>
+              </>
+            )}
 
             <button
               type="button"
@@ -112,6 +127,22 @@ export function AppHeader({
               <Download className="h-4 w-4" aria-hidden="true" />
               <span>Export Excel Resmi</span>
             </button>
+
+            <div className="ml-1 flex items-center gap-2 border-l border-slate-200 pl-3">
+              <div className="hidden text-right sm:block">
+                <p className="text-xs font-semibold text-slate-800">{user.fullName}</p>
+                <p className="text-[11px] text-slate-500">{roleLabel}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onLogout}
+                title="Keluar dari akun"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/30"
+              >
+                <LogOut className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                <span>Keluar</span>
+              </button>
+            </div>
           </div>
         </div>
 

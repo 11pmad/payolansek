@@ -10,6 +10,7 @@ import {
 import {
   KELURAHAN_LIST,
   MONTH_TITLES,
+  type AuthUser,
   type KunjunganInput,
   type LayananInput,
   type YearReportData,
@@ -23,6 +24,7 @@ import { KunjunganFormSteps, type KunjunganStepId } from './KunjunganFormSteps.j
 import { LayananFormSteps, type LayananStepId } from './LayananFormSteps.js';
 
 interface InputWorkspaceProps {
+  user: AuthUser;
   report: YearReportData;
   month: number;
   kelurahanIdx: number;
@@ -36,6 +38,7 @@ interface InputWorkspaceProps {
 }
 
 export function InputWorkspace({
+  user,
   report,
   month,
   kelurahanIdx,
@@ -47,6 +50,7 @@ export function InputWorkspace({
   onSaveLayanan,
   onCopyPosyanduPrevMonth,
 }: InputWorkspaceProps) {
+  const lockedKelIdx = user.role === 'petugas' && user.kelurahanIdx !== null ? user.kelurahanIdx : null;
   const [kStep, setKStep] = useState<KunjunganStepId>('dalam');
   const [lStep, setLStep] = useState<LayananStepId>('kelainan');
   const [kDraft, setKDraft] = useState<KunjunganInput>(report.kunjungan[month][kelurahanIdx]);
@@ -122,6 +126,13 @@ export function InputWorkspace({
 
   const handleSaveAndNext = async () => {
     await performSave();
+    if (lockedKelIdx !== null) {
+      if (sheet === 'kunjungan') {
+        onChangeSheet('layanan');
+        setLStep('kelainan');
+      }
+      return;
+    }
     if (kelurahanIdx < KELURAHAN_LIST.length - 1) {
       onChangeKelurahan(kelurahanIdx + 1);
       if (sheet === 'kunjungan') setKStep('dalam');
@@ -242,11 +253,15 @@ export function InputWorkspace({
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D7A6F] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0A645B] disabled:opacity-50"
             >
               <span>
-                {kelurahanIdx < KELURAHAN_LIST.length - 1
-                  ? `Simpan & ${KELURAHAN_LIST[kelurahanIdx + 1].name}`
-                  : sheet === 'kunjungan'
+                {lockedKelIdx !== null
+                  ? sheet === 'kunjungan'
                     ? 'Simpan & Lanjut ke Layanan'
-                    : 'Simpan Selesai'}
+                    : 'Simpan Selesai'
+                  : kelurahanIdx < KELURAHAN_LIST.length - 1
+                    ? `Simpan & ${KELURAHAN_LIST[kelurahanIdx + 1].name}`
+                    : sheet === 'kunjungan'
+                      ? 'Simpan & Lanjut ke Layanan'
+                      : 'Simpan Selesai'}
               </span>
               <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -257,6 +272,7 @@ export function InputWorkspace({
         <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-3">
           {KELURAHAN_LIST.map((kel) => {
             const active = kel.idx === kelurahanIdx;
+            const disabled = lockedKelIdx !== null && kel.idx !== lockedKelIdx;
             const filled =
               sheet === 'kunjungan'
                 ? liveKunjunganYear[month].rows[kel.idx].hasInput
@@ -266,11 +282,15 @@ export function InputWorkspace({
               <button
                 key={kel.id}
                 type="button"
+                disabled={disabled}
+                title={disabled ? `Akun Anda khusus Kelurahan ${KELURAHAN_LIST[lockedKelIdx!]?.name}` : undefined}
                 onClick={() => void withAutoSave(() => onChangeKelurahan(kel.idx))}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                   active
                     ? 'border-[#0D7A6F] bg-[#0D7A6F] text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    : disabled
+                      ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 {filled && (

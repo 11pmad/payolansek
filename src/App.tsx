@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import type {
+  AuthUser,
   KunjunganInput,
   LayananInput,
   YearReportData,
@@ -8,12 +9,15 @@ import type {
 } from '../shared/types.js';
 import { computeMonthLayanan, computeYearKunjungan } from '../shared/calculations.js';
 import {
+  ApiError,
   copyPosyanduFromPrevMonth,
   createYear,
+  fetchCurrentUser,
   fetchReport,
   fetchYears,
   getExportUrl,
   importExcelFile,
+  logout,
   saveKunjungan,
   saveLayanan,
   saveSettings,
@@ -21,10 +25,14 @@ import {
 import { AppHeader, type NavTab } from './components/AppHeader.js';
 import { DashboardView } from './components/DashboardView.js';
 import { InputWorkspace } from './components/InputWorkspace.js';
+import { LoginView } from './components/LoginView.js';
 import { TablePreviewView } from './components/TablePreviewView.js';
 import { SettingsView } from './components/SettingsView.js';
 
 export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
   const [years, setYears] = useState<YearSummary[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [report, setReport] = useState<YearReportData | null>(null);
@@ -33,13 +41,22 @@ export default function App() {
   const [selectedKelurahan, setSelectedKelurahan] = useState<number>(0);
   const [selectedSheet, setSelectedSheet] = useState<'kunjungan' | 'layanan'>('kunjungan');
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const showToast = (type: 'ok' | 'err', text: string) => {
     setToast({ type, text });
     window.setTimeout(() => setToast(null), 4500);
+  };
+
+  const handleApiError = (err: unknown, fallback: string) => {
+    if (err instanceof ApiError && err.status === 401) {
+      setUser(null);
+      setReport(null);
+      return;
+    }
+    showToast('err', err instanceof Error ? err.message : fallback);
   };
 
   const loadYearData = async (yearToLoad: number, pickLatestMonth = false) => {
@@ -59,8 +76,24 @@ export default function App() {
         setSelectedMonth(latest);
       }
     } catch (err) {
-      showToast('err', err instanceof Error ? err.message : 'Gagal memuat data.');
+      handleApiError(err, 'Gagal memuat data.');
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const bootstrapForUser = async (authedUser: AuthUser) => {
+    setUser(authedUser);
+    setSelectedKelurahan(authedUser.kelurahanIdx ?? 0);
+    setActiveTab('dashboard');
+    setIsLoading(true);
+    try {
+      const yrs = await fetchYears();
+      setYears(yrs);
+      const firstYear = yrs[0]?.year ?? 2026;
+      await loadYearData(firstYear, true);
+    } catch (err) {
+      handleApiError(err, 'Gagal terhubung ke server.');
       setIsLoading(false);
     }
   };
@@ -68,13 +101,14 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const yrs = await fetchYears();
-        setYears(yrs);
-        const firstYear = yrs[0]?.year ?? 2026;
-        await loadYearData(firstYear, true);
-      } catch (err) {
-        showToast('err', err instanceof Error ? err.message : 'Gagal terhubung ke server.');
-        setIsLoading(false);
+        const currentUser = await fetchCurrentUser();
+        if (currentUser) {
+          await bootstrapForUser(currentUser);
+        }
+      } catch {
+        // leave unauthenticated so LoginView renders
+      } finally {
+        setIsCheckingAuth(false);
       }
     })();
   }, []);
@@ -99,16 +133,21 @@ export default function App() {
     data: KunjunganInput,
   ) => {
     if (!report) return;
-    await saveKunjungan(report.year, month, kelurahanIdx, data);
-    setReport((prev) => {
-      if (!prev) return prev;
-      const nextMonth = [...prev.kunjungan[month]];
-      nextMonth[kelurahanIdx] = data;
-      return {
-        ...prev,
-        kunjungan: { ...prev.kunjungan, [month]: nextMonth },
-      };
-    });
+    try {
+      await saveKunjungan(report.year, month, kelurahanIdx, data);
+      setReport((prev) => {
+        if (!prev) return prev;
+        const nextMonth = [...prev.kunjungan[month]];
+        nextMonth[kelurahanIdx] = data;
+        return {
+          ...prev,
+          kunjungan: { ...prev.kunjungan, [month]: nextMonth },
+        };
+      });
+    } catch (err) {
+      handleApiError(err, 'Gagal menyimpan data kunjungan.');
+      throw err;
+    }
   };
 
   const handleSaveLayanan = async (
@@ -117,27 +156,37 @@ export default function App() {
     data: LayananInput,
   ) => {
     if (!report) return;
-    await saveLayanan(report.year, month, kelurahanIdx, data);
-    setReport((prev) => {
-      if (!prev) return prev;
-      const nextMonth = [...prev.layanan[month]];
-      nextMonth[kelurahanIdx] = data;
-      return {
-        ...prev,
-        layanan: { ...prev.layanan, [month]: nextMonth },
-      };
-    });
+    try {
+      await saveLayanan(report.year, month, kelurahanIdx, data);
+      setReport((prev) => {
+        if (!prev) return prev;
+        const nextMonth = [...prev.layanan[month]];
+        nextMonth[kelurahanIdx] = data;
+        return {
+          ...prev,
+          layanan: { ...prev.layanan, [month]: nextMonth },
+        };
+      });
+    } catch (err) {
+      handleApiError(err, 'Gagal menyimpan data layanan.');
+      throw err;
+    }
   };
 
   const handleCopyPosyandu = async (targetMonth: number, kelurahanIdx: number) => {
     if (!report || targetMonth <= 1) return;
-    const updated = await copyPosyanduFromPrevMonth(
-      report.year,
-      targetMonth,
-      targetMonth - 1,
-      kelurahanIdx,
-    );
-    setReport(updated);
+    try {
+      const updated = await copyPosyanduFromPrevMonth(
+        report.year,
+        targetMonth,
+        targetMonth - 1,
+        kelurahanIdx,
+      );
+      setReport(updated);
+    } catch (err) {
+      handleApiError(err, 'Gagal menyalin data bulan sebelumnya.');
+      throw err;
+    }
   };
 
   const handleImport = async (file: File) => {
@@ -148,7 +197,7 @@ export default function App() {
       setYears(await fetchYears());
       showToast('ok', `Berhasil mengimpor "${file.name}" ke Tahun ${selectedYear}.`);
     } catch (err) {
-      showToast('err', err instanceof Error ? err.message : 'Gagal mengimpor file Excel.');
+      handleApiError(err, 'Gagal mengimpor file Excel.');
     } finally {
       setIsImporting(false);
     }
@@ -158,9 +207,33 @@ export default function App() {
     window.location.href = getExportUrl(selectedYear);
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      setUser(null);
+      setReport(null);
+      setToast(null);
+    }
+  };
+
+  if (isCheckingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F8FAF9] text-sm text-slate-500">
+        Memeriksa sesi login...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginView onSuccess={(authedUser) => void bootstrapForUser(authedUser)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAF9] text-slate-900">
       <AppHeader
+        user={user}
+        onLogout={() => void handleLogout()}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         years={years}
@@ -212,8 +285,12 @@ export default function App() {
                 kunjunganYear={kunjunganYear}
                 layananYear={layananYear}
                 onGoToInput={(m, kelIdx, sh) => {
+                  const targetKel =
+                    user.role === 'petugas' && user.kelurahanIdx !== null
+                      ? user.kelurahanIdx
+                      : kelIdx;
                   setSelectedMonth(m);
-                  setSelectedKelurahan(kelIdx);
+                  setSelectedKelurahan(targetKel);
                   setSelectedSheet(sh);
                   setActiveTab('input');
                 }}
@@ -222,6 +299,7 @@ export default function App() {
 
             {activeTab === 'input' && (
               <InputWorkspace
+                user={user}
                 report={report}
                 month={selectedMonth}
                 kelurahanIdx={selectedKelurahan}
@@ -247,7 +325,8 @@ export default function App() {
 
             {activeTab === 'settings' && (
               <SettingsView
-                key={report.year}
+                key={`${report.year}-${user.id}`}
+                user={user}
                 report={report}
                 onSaveSettings={async (payload) => {
                   const updated = await saveSettings(report.year, payload);

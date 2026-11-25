@@ -1,9 +1,20 @@
 import type {
+  AuthUser,
   KunjunganInput,
   LayananInput,
+  UserRecord,
+  UserRole,
   YearReportData,
   YearSummary,
 } from '../shared/types.js';
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function handleJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -14,9 +25,72 @@ async function handleJson<T>(res: Response): Promise<T> {
     } catch {
       // ignore json parse error
     }
-    throw new Error(msg);
+    throw new ApiError(res.status, msg);
   }
   return (await res.json()) as T;
+}
+
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  const data = await handleJson<{ user: AuthUser | null }>(await fetch('/api/auth/me'));
+  return data.user;
+}
+
+export async function login(username: string, password: string): Promise<AuthUser> {
+  const data = await handleJson<{ user: AuthUser }>(
+    await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+  );
+  return data.user;
+}
+
+export async function logout(): Promise<void> {
+  await handleJson<{ ok: boolean }>(
+    await fetch('/api/auth/logout', { method: 'POST' }),
+  );
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await handleJson<{ ok: boolean }>(
+    await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  );
+}
+
+export async function fetchUsers(): Promise<UserRecord[]> {
+  const data = await handleJson<{ users: UserRecord[] }>(await fetch('/api/users'));
+  return data.users;
+}
+
+export async function createUser(payload: {
+  username: string;
+  password: string;
+  fullName: string;
+  role: UserRole;
+  kelurahanIdx: number | null;
+}): Promise<UserRecord> {
+  const data = await handleJson<{ user: UserRecord }>(
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  );
+  return data.user;
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  await handleJson<{ ok: boolean }>(
+    await fetch(`/api/users/${id}`, { method: 'DELETE' }),
+  );
 }
 
 export async function fetchYears(): Promise<YearSummary[]> {

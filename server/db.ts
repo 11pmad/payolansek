@@ -3,8 +3,11 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
   KELURAHAN_LIST,
+  type AuthUser,
   type KunjunganInput,
   type LayananInput,
+  type UserRecord,
+  type UserRole,
   type YearReportData,
   type YearSummary,
 } from '../shared/types.js';
@@ -27,6 +30,7 @@ export class ReportDatabase {
   private init(): void {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS report_years (
         year INTEGER PRIMARY KEY,
         puskesmas TEXT NOT NULL,
@@ -51,6 +55,23 @@ export class ReportDatabase {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (year, month, kelurahan_idx),
         FOREIGN KEY (year) REFERENCES report_years(year) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('admin', 'petugas')),
+        kelurahan_idx INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        token TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
   }
@@ -255,5 +276,129 @@ export class ReportDatabase {
     };
     this.saveYearReport(report);
     return this.getYearReport(year)!;
+  }
+
+  // --- User & Session Methods ---
+
+  countUsers(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as cnt FROM users').get() as { cnt: number };
+    return row.cnt;
+  }
+
+  listUsers(): UserRecord[] {
+    return this.db
+      .prepare(
+        `SELECT id, username, full_name as fullName, role, kelurahan_idx as kelurahanIdx, created_at as createdAt
+         FROM users ORDER BY role ASC, id ASC`,
+      )
+      .all() as unknown as UserRecord[];
+  }
+
+  getUserByUsername(
+    username: string,
+  ): (AuthUser & { passwordHash: string }) | null {
+    const normalized = username.trim().toLowerCase();
+    const row = this.db
+      .prepare(
+        `SELECT id, username, full_name as fullName, role, kelurahan_idx as kelurahanIdx, password_hash as passwordHash
+         FROM users WHERE LOWER(username) = ?`,
+      )
+      .get(normalized) as (AuthUser & { passwordHash: string }) | undefined;
+    return row ?? null;
+  }
+
+  getUserById(id: number): (AuthUser & { passwordHash: string }) | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, username, full_name as fullName, role, kelurahan_idx as kelurahanIdx, password_hash as passwordHash
+         FROM users WHERE id = ?`,
+      )
+      .get(id) as (AuthUser & { passwordHash: string }) | undefined;
+    return row ?? null;
+  }
+
+  createUser(params: {
+    username: string;
+    passwordHash: string;
+    fullName: string;
+    role: UserRole;
+    kelurahanIdx: number | null;
+  }): UserRecord {
+    const now = new Date().toISOString();
+    const normalizedUsername = params.username.trim().toLowerCase();
+    const res = this.db
+      .prepare(
+        `INSERT INTO users (username, password_hash, full_name, role, kelurahan_idx, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        normalizedUsername,
+        params.passwordHash,
+        params.fullName.trim(),
+        params.role,
+        params.role === 'admin' ? null : params.kelurahanIdx,
+        now,
+        now,
+      );
+
+    return {
+      id: Number(res.lastInsertRowid),
+      username: normalizedUsername,
+      fullName: params.fullName.trim(),
+      role: params.role,
+      kelurahanIdx: params.role === 'admin' ? null : params.kelurahanIdx,
+      createdAt: now,
+    };
+  }
+
+  updateUserPassword(id: number, passwordHash: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .run(passwordHash, now, id);
+  }
+
+  deleteUser(id: number): void {
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  }
+
+  createSession(userId: number, token: string, expiresAt: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare('INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
+      .run(token, userId, expiresAt, now);
+  }
+
+  getSessionUser(token: string): AuthUser | null {
+    const row = this.db
+      .prepare(
+        `SELECT u.id, u.username, u.full_name as fullName, u.role, u.kelurahan_idx as kelurahanIdx, s.expires_at as expiresAt
+         FROM sessions s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.token = ?`,
+      )
+      .get(token) as (AuthUser & { expiresAt: string }) | undefined;
+
+    if (!row) return null;
+    if (Date.parse(row.expiresAt) <= Date.now()) {
+      this.deleteSession(token);
+      return null;
+    }
+
+    return {
+      id: row.id,
+      username: row.username,
+      fullName: row.fullName,
+      role: row.role,
+      kelurahanIdx: row.kelurahanIdx,
+    };
+  }
+
+  deleteSession(token: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+
+  deleteUserSessions(userId: number): void {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
   }
 }

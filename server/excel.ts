@@ -1,4 +1,6 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import {
   KELURAHAN_LIST,
@@ -20,7 +22,12 @@ import {
 
 export const KUNJUNGAN_SHEET_NAME = 'Lap. Kunjungan  ';
 export const LAYANAN_SHEET_NAME = 'Lap. Layanan Lansia ';
-export const DEFAULT_TEMPLATE_PATH = path.resolve(process.cwd(), 'templates', 'template_laporan_lansia.xlsx');
+
+const cwdTemplate = path.resolve(process.cwd(), 'templates', 'template_laporan_lansia.xlsx');
+const relativeTemplate = fileURLToPath(
+  new URL('../templates/template_laporan_lansia.xlsx', import.meta.url),
+);
+export const DEFAULT_TEMPLATE_PATH = fs.existsSync(cwdTemplate) ? cwdTemplate : relativeTemplate;
 
 function findSheet(workbook: ExcelJS.Workbook, targetName: string): ExcelJS.Worksheet | undefined {
   const exact = workbook.getWorksheet(targetName);

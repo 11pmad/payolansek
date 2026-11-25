@@ -14,5 +14,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["shared", "server", "src", "tests", "vite.config.ts"]
+  "include": ["shared", "server", "api", "src", "tests", "vite.config.ts"]
 }

@@ -24,12 +24,12 @@ import {
   SESSION_TTL_SECONDS,
   verifyPassword,
 } from './auth.js';
-import { ReportDatabase } from './db.js';
 import {
   buildOfficialExcelWorkbook,
   DEFAULT_TEMPLATE_PATH,
   parseExcelWorkbook,
 } from './excel.js';
+import type { ReportStore } from './store.js';
 
 export interface AppOptions {
   dbPath?: string;
@@ -37,23 +37,47 @@ export interface AppOptions {
   autoSeed?: boolean;
 }
 
-function formatSessionCookie(token: string, maxAgeSec: number): string {
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}`;
+function isSecureRequest(req: Request): boolean {
+  const proto = req.headers['x-forwarded-proto'];
+  const isHttpsProto = Array.isArray(proto) ? proto[0] === 'https' : proto === 'https';
+  return Boolean(req.secure || isHttpsProto || process.env.VERCEL === '1');
+}
+
+function formatSessionCookie(token: string, maxAgeSec: number, secure: boolean): string {
+  const parts = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    'HttpOnly',
+    'SameSite=Lax',
+    'Path=/',
+    `Max-Age=${maxAgeSec}`,
+  ];
+  if (secure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+async function openStore(options: AppOptions): Promise<ReportStore> {
+  const pgUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (!options.dbPath && pgUrl) {
+    const { createPostgresStore } = await import('./db-postgres.js');
+    return createPostgresStore(pgUrl);
+  }
+  const { createSqliteStore } = await import('./db.js');
+  return createSqliteStore(options.dbPath);
 }
 
 export async function createApp(options: AppOptions = {}) {
-  const db = new ReportDatabase(options.dbPath);
+  const db = await openStore(options);
   const templatePath = options.templatePath ?? DEFAULT_TEMPLATE_PATH;
   const autoSeed = options.autoSeed ?? true;
 
-  if (autoSeed && db.listYears().length === 0 && fs.existsSync(templatePath)) {
+  if (autoSeed && (await db.listYears()).length === 0 && fs.existsSync(templatePath)) {
     const initial = await parseExcelWorkbook(templatePath, 2026);
-    db.saveYearReport(initial);
+    await db.saveYearReport(initial);
   }
 
-  if (db.countUsers() === 0) {
+  if ((await db.countUsers()) === 0) {
     const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'payolansek2026';
-    db.createUser({
+    await db.createUser({
       username: 'admin',
       passwordHash: hashPassword(defaultPassword),
       fullName: 'Admin Puskesmas',
@@ -63,6 +87,7 @@ export async function createApp(options: AppOptions = {}) {
   }
 
   const app = express();
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '5mb' }));
 
   const upload = multer({
@@ -75,15 +100,19 @@ export async function createApp(options: AppOptions = {}) {
     return cookies[SESSION_COOKIE_NAME] || null;
   };
 
-  const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-    const token = getSessionToken(req);
-    const user = token ? db.getSessionUser(token) : null;
-    if (!user) {
-      res.status(401).json({ error: 'Silakan login terlebih dahulu.' });
-      return;
+  const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const token = getSessionToken(req);
+      const user = token ? await db.getSessionUser(token) : null;
+      if (!user) {
+        res.status(401).json({ error: 'Silakan login terlebih dahulu.' });
+        return;
+      }
+      res.locals.user = user;
+      next();
+    } catch (err) {
+      next(err);
     }
-    res.locals.user = user;
-    next();
   };
 
   const requireAdmin = (_req: Request, res: Response, next: NextFunction) => {
@@ -102,17 +131,18 @@ export async function createApp(options: AppOptions = {}) {
 
   // --- Public Auth & Health Endpoints ---
 
-  app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ ok: true, years: db.listYears().map((y) => y.year) });
+  app.get('/api/health', async (_req: Request, res: Response) => {
+    const years = await db.listYears();
+    res.json({ ok: true, years: years.map((y) => y.year) });
   });
 
-  app.get('/api/auth/me', (req: Request, res: Response) => {
+  app.get('/api/auth/me', async (req: Request, res: Response) => {
     const token = getSessionToken(req);
-    const user = token ? db.getSessionUser(token) : null;
+    const user = token ? await db.getSessionUser(token) : null;
     res.json({ user });
   });
 
-  app.post('/api/auth/login', (req: Request, res: Response) => {
+  app.post('/api/auth/login', async (req: Request, res: Response) => {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const rate = checkLoginRateLimit(ip);
     if (!rate.allowed) {
@@ -130,7 +160,7 @@ export async function createApp(options: AppOptions = {}) {
       return;
     }
 
-    const found = db.getUserByUsername(username);
+    const found = await db.getUserByUsername(username);
     if (!found || !verifyPassword(password, found.passwordHash)) {
       recordLoginFailure(ip);
       res.status(401).json({ error: 'Username atau password salah.' });
@@ -140,7 +170,7 @@ export async function createApp(options: AppOptions = {}) {
     clearLoginFailures(ip);
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
-    db.createSession(found.id, token, expiresAt);
+    await db.createSession(found.id, token, expiresAt);
 
     const user: AuthUser = {
       id: found.id,
@@ -150,22 +180,25 @@ export async function createApp(options: AppOptions = {}) {
       kelurahanIdx: found.kelurahanIdx,
     };
 
-    res.setHeader('Set-Cookie', formatSessionCookie(token, SESSION_TTL_SECONDS));
+    res.setHeader(
+      'Set-Cookie',
+      formatSessionCookie(token, SESSION_TTL_SECONDS, isSecureRequest(req)),
+    );
     res.json({ user });
   });
 
-  app.post('/api/auth/logout', (req: Request, res: Response) => {
+  app.post('/api/auth/logout', async (req: Request, res: Response) => {
     const token = getSessionToken(req);
     if (token) {
-      db.deleteSession(token);
+      await db.deleteSession(token);
     }
-    res.setHeader('Set-Cookie', formatSessionCookie('', 0));
+    res.setHeader('Set-Cookie', formatSessionCookie('', 0, isSecureRequest(req)));
     res.json({ ok: true });
   });
 
   // --- Authenticated Account & User Management ---
 
-  app.post('/api/auth/change-password', requireAuth, (req: Request, res: Response) => {
+  app.post('/api/auth/change-password', requireAuth, async (req: Request, res: Response) => {
     const user = res.locals.user as AuthUser;
     const currentPassword =
       typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
@@ -180,22 +213,23 @@ export async function createApp(options: AppOptions = {}) {
       return;
     }
 
-    const record = db.getUserById(user.id);
+    const record = await db.getUserById(user.id);
     if (!record || !verifyPassword(currentPassword, record.passwordHash)) {
       res.status(400).json({ error: 'Password lama tidak sesuai.' });
       return;
     }
 
-    db.updateUserPassword(user.id, hashPassword(newPassword));
+    await db.updateUserPassword(user.id, hashPassword(newPassword));
     res.json({ ok: true });
   });
 
-  app.get('/api/users', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-    res.json({ users: db.listUsers() });
+  app.get('/api/users', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    res.json({ users: await db.listUsers() });
   });
 
-  app.post('/api/users', requireAuth, requireAdmin, (req: Request, res: Response) => {
-    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+  app.post('/api/users', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    const username =
+      typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
     const role = (req.body?.role === 'admin' ? 'admin' : 'petugas') as UserRole;
@@ -226,12 +260,12 @@ export async function createApp(options: AppOptions = {}) {
       res.status(400).json({ error: 'Kelurahan tugas tidak valid.' });
       return;
     }
-    if (db.getUserByUsername(username)) {
+    if (await db.getUserByUsername(username)) {
       res.status(409).json({ error: `Username "${username}" sudah digunakan.` });
       return;
     }
 
-    const created = db.createUser({
+    const created = await db.createUser({
       username,
       passwordHash: hashPassword(password),
       fullName,
@@ -241,7 +275,7 @@ export async function createApp(options: AppOptions = {}) {
     res.status(201).json({ user: created });
   });
 
-  app.delete('/api/users/:id', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  app.delete('/api/users/:id', requireAuth, requireAdmin, async (req: Request, res: Response) => {
     const currentUser = res.locals.user as AuthUser;
     const targetId = Number(req.params.id);
     if (!Number.isInteger(targetId) || targetId <= 0) {
@@ -253,48 +287,48 @@ export async function createApp(options: AppOptions = {}) {
       return;
     }
 
-    const target = db.getUserById(targetId);
+    const target = await db.getUserById(targetId);
     if (!target) {
       res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
       return;
     }
 
     if (target.role === 'admin') {
-      const adminCount = db.listUsers().filter((u) => u.role === 'admin').length;
+      const adminCount = (await db.listUsers()).filter((u) => u.role === 'admin').length;
       if (adminCount <= 1) {
         res.status(400).json({ error: 'Tidak dapat menghapus satu-satunya Admin Puskesmas.' });
         return;
       }
     }
 
-    db.deleteUser(targetId);
+    await db.deleteUser(targetId);
     res.json({ ok: true });
   });
 
   // --- Protected Report Endpoints ---
 
-  app.get('/api/years', requireAuth, (_req: Request, res: Response) => {
-    res.json({ years: db.listYears() });
+  app.get('/api/years', requireAuth, async (_req: Request, res: Response) => {
+    res.json({ years: await db.listYears() });
   });
 
-  app.post('/api/years', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  app.post('/api/years', requireAuth, requireAdmin, async (req: Request, res: Response) => {
     const year = Number(req.body?.year);
     const copyFromYear = req.body?.copyFromYear ? Number(req.body.copyFromYear) : undefined;
     if (!Number.isInteger(year) || year < 2000 || year > 2100) {
       res.status(400).json({ error: 'Tahun tidak valid.' });
       return;
     }
-    if (db.hasYear(year)) {
+    if (await db.hasYear(year)) {
       res.status(409).json({ error: `Laporan tahun ${year} sudah ada.` });
       return;
     }
-    const created = db.createYear(year, copyFromYear);
+    const created = await db.createYear(year, copyFromYear);
     res.status(201).json(created);
   });
 
-  app.get('/api/reports/:year', requireAuth, (req: Request, res: Response) => {
+  app.get('/api/reports/:year', requireAuth, async (req: Request, res: Response) => {
     const year = Number(req.params.year);
-    const report = db.getYearReport(year);
+    const report = await db.getYearReport(year);
     if (!report) {
       res.status(404).json({ error: `Laporan tahun ${year} tidak ditemukan.` });
       return;
@@ -305,13 +339,13 @@ export async function createApp(options: AppOptions = {}) {
   app.put(
     '/api/reports/:year/kunjungan/:month/:kelurahanIdx',
     requireAuth,
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       const user = res.locals.user as AuthUser;
       const year = Number(req.params.year);
       const month = Number(req.params.month);
       const kelIdx = Number(req.params.kelurahanIdx);
 
-      if (!db.hasYear(year)) {
+      if (!(await db.hasYear(year))) {
         res.status(404).json({ error: `Laporan tahun ${year} tidak ditemukan.` });
         return;
       }
@@ -330,7 +364,7 @@ export async function createApp(options: AppOptions = {}) {
         ...createEmptyKunjunganInput(),
         ...(req.body as Partial<KunjunganInput>),
       };
-      const updatedAt = db.upsertKunjungan(year, month, kelIdx, sanitized);
+      const updatedAt = await db.upsertKunjungan(year, month, kelIdx, sanitized);
       res.json({ ok: true, updatedAt, data: sanitized });
     },
   );
@@ -338,13 +372,13 @@ export async function createApp(options: AppOptions = {}) {
   app.put(
     '/api/reports/:year/layanan/:month/:kelurahanIdx',
     requireAuth,
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       const user = res.locals.user as AuthUser;
       const year = Number(req.params.year);
       const month = Number(req.params.month);
       const kelIdx = Number(req.params.kelurahanIdx);
 
-      if (!db.hasYear(year)) {
+      if (!(await db.hasYear(year))) {
         res.status(404).json({ error: `Laporan tahun ${year} tidak ditemukan.` });
         return;
       }
@@ -364,19 +398,19 @@ export async function createApp(options: AppOptions = {}) {
         ...(req.body as Partial<LayananInput>),
         keterangan: typeof req.body?.keterangan === 'string' ? req.body.keterangan : '',
       };
-      const updatedAt = db.upsertLayanan(year, month, kelIdx, sanitized);
+      const updatedAt = await db.upsertLayanan(year, month, kelIdx, sanitized);
       res.json({ ok: true, updatedAt, data: sanitized });
     },
   );
 
-  app.post('/api/reports/:year/copy-posyandu', requireAuth, (req: Request, res: Response) => {
+  app.post('/api/reports/:year/copy-posyandu', requireAuth, async (req: Request, res: Response) => {
     const user = res.locals.user as AuthUser;
     const year = Number(req.params.year);
     const targetMonth = Number(req.body?.targetMonth);
     const sourceMonth = Number(req.body?.sourceMonth);
     const kelIdx = req.body?.kelurahanIdx !== undefined ? Number(req.body.kelurahanIdx) : undefined;
 
-    const report = db.getYearReport(year);
+    const report = await db.getYearReport(year);
     if (!report) {
       res.status(404).json({ error: `Laporan tahun ${year} tidak ditemukan.` });
       return;
@@ -414,15 +448,15 @@ export async function createApp(options: AppOptions = {}) {
         kaderTerlatih: src.kaderTerlatih,
         jmlJkn: src.jmlJkn,
       };
-      db.upsertKunjungan(year, targetMonth, idx, updated);
+      await db.upsertKunjungan(year, targetMonth, idx, updated);
     }
 
-    res.json(db.getYearReport(year));
+    res.json(await db.getYearReport(year));
   });
 
-  app.put('/api/reports/:year/settings', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  app.put('/api/reports/:year/settings', requireAuth, requireAdmin, async (req: Request, res: Response) => {
     const year = Number(req.params.year);
-    const report = db.getYearReport(year);
+    const report = await db.getYearReport(year);
     if (!report) {
       res.status(404).json({ error: `Laporan tahun ${year} tidak ditemukan.` });
       return;
@@ -463,8 +497,8 @@ export async function createApp(options: AppOptions = {}) {
 
     report.puskesmas = puskesmas;
     report.kota = kota;
-    db.saveYearReport(report);
-    res.json(db.getYearReport(year));
+    await db.saveYearReport(report);
+    res.json(await db.getYearReport(year));
   });
 
   app.post(
@@ -484,8 +518,8 @@ export async function createApp(options: AppOptions = {}) {
           return;
         }
         const parsed = await parseExcelWorkbook(req.file.buffer, year);
-        db.saveYearReport(parsed);
-        res.json(db.getYearReport(year));
+        await db.saveYearReport(parsed);
+        res.json(await db.getYearReport(year));
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Gagal membaca file Excel.';
         res.status(400).json({ error: msg });
@@ -496,7 +530,7 @@ export async function createApp(options: AppOptions = {}) {
   app.get('/api/reports/:year/export', requireAuth, async (req: Request, res: Response) => {
     try {
       const year = Number(req.params.year);
-      const report = db.getYearReport(year);
+      const report = await db.getYearReport(year);
       if (!report) {
         res.status(404).json({ error: `Laporan tahun ${year} tidak ditemukan.` });
         return;
@@ -515,7 +549,7 @@ export async function createApp(options: AppOptions = {}) {
     }
   });
 
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
     const distDir = path.resolve(process.cwd(), 'dist');
     if (fs.existsSync(distDir)) {
       app.use(express.static(distDir));
@@ -525,10 +559,15 @@ export async function createApp(options: AppOptions = {}) {
     }
   }
 
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const msg = err instanceof Error ? err.message : 'Terjadi kesalahan pada server.';
+    res.status(500).json({ error: msg });
+  });
+
   return { app, db };
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = Number(process.env.PORT ?? (process.env.NODE_ENV === 'production' ? 3000 : 3001));
   createApp().then(({ app }) => {

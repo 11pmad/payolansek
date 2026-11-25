@@ -15,6 +15,7 @@ import {
   createEmptyKunjunganInput,
   createEmptyLayananInput,
 } from '../shared/calculations.js';
+import type { ReportStore } from './store.js';
 
 const DEFAULT_DB_PATH = path.resolve(process.cwd(), 'data', 'lansia.db');
 
@@ -401,4 +402,31 @@ export class ReportDatabase {
   deleteUserSessions(userId: number): void {
     this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
   }
+}
+
+export function createSqliteStore(dbPath?: string): ReportStore {
+  const db = new ReportDatabase(dbPath);
+  return {
+    close: async () => db.close(),
+    listYears: async () => db.listYears(),
+    hasYear: async (year) => db.hasYear(year),
+    getYearReport: async (year) => db.getYearReport(year),
+    saveYearReport: async (report) => db.saveYearReport(report),
+    upsertKunjungan: async (year, month, kelIdx, data) =>
+      db.upsertKunjungan(year, month, kelIdx, data),
+    upsertLayanan: async (year, month, kelIdx, data) =>
+      db.upsertLayanan(year, month, kelIdx, data),
+    createYear: async (year, copyFromYear) => db.createYear(year, copyFromYear),
+    countUsers: async () => db.countUsers(),
+    listUsers: async () => db.listUsers(),
+    getUserByUsername: async (username) => db.getUserByUsername(username),
+    getUserById: async (id) => db.getUserById(id),
+    createUser: async (params) => db.createUser(params),
+    updateUserPassword: async (id, hash) => db.updateUserPassword(id, hash),
+    deleteUser: async (id) => db.deleteUser(id),
+    createSession: async (userId, token, expiresAt) => db.createSession(userId, token, expiresAt),
+    getSessionUser: async (token) => db.getSessionUser(token),
+    deleteSession: async (token) => db.deleteSession(token),
+    deleteUserSessions: async (userId) => db.deleteUserSessions(userId),
+  };
 }

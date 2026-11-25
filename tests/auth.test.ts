@@ -23,8 +23,7 @@ describe('Authentication & RBAC', () => {
         closeServer = () =>
           new Promise<void>((res) => {
             server.close(() => {
-              db.close();
-              res();
+              void db.close().then(res);
             });
           });
         resolve();

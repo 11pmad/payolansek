@@ -55,18 +55,24 @@ function formatSessionCookie(token: string, maxAgeSec: number, secure: boolean):
   return parts.join('; ');
 }
 
-async function openStore(options: AppOptions): Promise<ReportStore> {
-  const pgUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+async function openStore(
+  options: AppOptions,
+): Promise<{ store: ReportStore; storageType: 'postgres' | 'sqlite' }> {
+  const pgUrl =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING;
   if (!options.dbPath && pgUrl) {
     const { createPostgresStore } = await import('./db-postgres.js');
-    return createPostgresStore(pgUrl);
+    return { store: await createPostgresStore(pgUrl), storageType: 'postgres' };
   }
   const { createSqliteStore } = await import('./db.js');
-  return createSqliteStore(options.dbPath);
+  return { store: createSqliteStore(options.dbPath), storageType: 'sqlite' };
 }
 
 export async function createApp(options: AppOptions = {}) {
-  const db = await openStore(options);
+  const { store: db, storageType } = await openStore(options);
   const templatePath = options.templatePath ?? DEFAULT_TEMPLATE_PATH;
   const autoSeed = options.autoSeed ?? true;
 
@@ -88,6 +94,13 @@ export async function createApp(options: AppOptions = {}) {
 
   const app = express();
   app.set('trust proxy', 1);
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    const r = req as Request & { _body?: boolean };
+    if (req.body !== undefined && req.body !== null && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+      r._body = true;
+    }
+    next();
+  });
   app.use(express.json({ limit: '5mb' }));
 
   const upload = multer({
@@ -132,8 +145,13 @@ export async function createApp(options: AppOptions = {}) {
   // --- Public Auth & Health Endpoints ---
 
   app.get('/api/health', async (_req: Request, res: Response) => {
-    const years = await db.listYears();
-    res.json({ ok: true, years: years.map((y) => y.year) });
+    const [years, usersCount] = await Promise.all([db.listYears(), db.countUsers()]);
+    res.json({
+      ok: true,
+      storage: storageType,
+      usersCount,
+      years: years.map((y) => y.year),
+    });
   });
 
   app.get('/api/auth/me', async (req: Request, res: Response) => {

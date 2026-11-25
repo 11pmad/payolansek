@@ -20,18 +20,22 @@ import {
   computeYearKunjungan,
   getKunjunganWarnings,
 } from '../../shared/calculations.js';
-import { KunjunganFormSteps, type KunjunganStepId } from './KunjunganFormSteps.js';
-import { LayananFormSteps, type LayananStepId } from './LayananFormSteps.js';
+import {
+  getUnifiedStepStates,
+  UNIFIED_STEPS,
+  UnifiedFormSteps,
+  type UnifiedStepId,
+} from './UnifiedFormSteps.js';
 
 interface InputWorkspaceProps {
   user: AuthUser;
   report: YearReportData;
   month: number;
   kelurahanIdx: number;
-  sheet: 'kunjungan' | 'layanan';
+  step: UnifiedStepId;
   onChangeMonth: (month: number) => void;
   onChangeKelurahan: (idx: number) => void;
-  onChangeSheet: (sheet: 'kunjungan' | 'layanan') => void;
+  onChangeStep: (step: UnifiedStepId) => void;
   onSaveKunjungan: (month: number, kelurahanIdx: number, data: KunjunganInput) => Promise<void>;
   onSaveLayanan: (month: number, kelurahanIdx: number, data: LayananInput) => Promise<void>;
   onCopyPosyanduPrevMonth: (targetMonth: number, kelurahanIdx: number) => Promise<void>;
@@ -42,31 +46,33 @@ export function InputWorkspace({
   report,
   month,
   kelurahanIdx,
-  sheet,
+  step,
   onChangeMonth,
   onChangeKelurahan,
-  onChangeSheet,
+  onChangeStep,
   onSaveKunjungan,
   onSaveLayanan,
   onCopyPosyanduPrevMonth,
 }: InputWorkspaceProps) {
   const lockedKelIdx = user.role === 'petugas' && user.kelurahanIdx !== null ? user.kelurahanIdx : null;
-  const [kStep, setKStep] = useState<KunjunganStepId>('dalam');
-  const [lStep, setLStep] = useState<LayananStepId>('kelainan');
   const [kDraft, setKDraft] = useState<KunjunganInput>(report.kunjungan[month][kelurahanIdx]);
   const [lDraft, setLDraft] = useState<LayananInput>(report.layanan[month][kelurahanIdx]);
-  const [isDirty, setIsDirty] = useState(false);
+  const [dirtyK, setDirtyK] = useState(false);
+  const [dirtyL, setDirtyL] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
 
+  const isDirty = dirtyK || dirtyL;
+
   useEffect(() => {
     setKDraft(report.kunjungan[month][kelurahanIdx]);
     setLDraft(report.layanan[month][kelurahanIdx]);
-    setIsDirty(false);
+    setDirtyK(false);
+    setDirtyL(false);
   }, [report, month, kelurahanIdx]);
 
-  // Live compute with unsaved draft overlaid
+  // Live compute with unsaved drafts overlaid
   const liveKunjunganYear = useMemo(() => {
     const cloned: Record<number, KunjunganInput[]> = {};
     for (let m = 1; m <= 12; m++) {
@@ -85,16 +91,20 @@ export function InputWorkspace({
   const currentKComputed = liveKunjunganYear[month].rows[kelurahanIdx];
   const currentLComputed = liveLayananMonth.rows[kelurahanIdx];
   const warnings = useMemo(() => getKunjunganWarnings(currentKComputed), [currentKComputed]);
+  const unifiedStepStates = useMemo(
+    () => getUnifiedStepStates(kDraft, lDraft),
+    [kDraft, lDraft],
+  );
 
   const performSave = async () => {
     setIsSaving(true);
     try {
-      if (sheet === 'kunjungan') {
-        await onSaveKunjungan(month, kelurahanIdx, kDraft);
-      } else {
-        await onSaveLayanan(month, kelurahanIdx, lDraft);
-      }
-      setIsDirty(false);
+      const ops: Promise<void>[] = [];
+      if (dirtyK || !dirtyL) ops.push(onSaveKunjungan(month, kelurahanIdx, kDraft));
+      if (dirtyL || !dirtyK) ops.push(onSaveLayanan(month, kelurahanIdx, lDraft));
+      await Promise.all(ops);
+      setDirtyK(false);
+      setDirtyL(false);
       setSavedBanner(
         `Tersimpan: ${KELURAHAN_LIST[kelurahanIdx].name} (${MONTH_TITLES[month - 1]} ${report.year})`,
       );
@@ -104,7 +114,6 @@ export function InputWorkspace({
     }
   };
 
-  // Auto-save dirty draft before switching month/kelurahan/sheet so user never loses numbers
   const withAutoSave = async (fn: () => void) => {
     if (isDirty) {
       await performSave();
@@ -112,7 +121,6 @@ export function InputWorkspace({
     fn();
   };
 
-  // Ctrl+S shortcut
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -126,21 +134,9 @@ export function InputWorkspace({
 
   const handleSaveAndNext = async () => {
     await performSave();
-    if (lockedKelIdx !== null) {
-      if (sheet === 'kunjungan') {
-        onChangeSheet('layanan');
-        setLStep('kelainan');
-      }
-      return;
-    }
-    if (kelurahanIdx < KELURAHAN_LIST.length - 1) {
+    if (lockedKelIdx === null && kelurahanIdx < KELURAHAN_LIST.length - 1) {
       onChangeKelurahan(kelurahanIdx + 1);
-      if (sheet === 'kunjungan') setKStep('dalam');
-      else setLStep('kelainan');
-    } else if (sheet === 'kunjungan') {
-      onChangeKelurahan(0);
-      onChangeSheet('layanan');
-      setLStep('kelainan');
+      onChangeStep('kunjungan');
     }
   };
 
@@ -158,7 +154,7 @@ export function InputWorkspace({
 
   return (
     <div className="space-y-4">
-      {/* Top Toolbar: Month + Kelurahan + Sheet Switcher */}
+      {/* Unified Top Toolbar: Month + Save Actions + 6 Kelurahan */}
       <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Month Switcher */}
@@ -203,32 +199,6 @@ export function InputWorkspace({
             </button>
           </div>
 
-          {/* Sheet Toggle */}
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => void withAutoSave(() => onChangeSheet('kunjungan'))}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                sheet === 'kunjungan'
-                  ? 'bg-white text-[#0D7A6F] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              1. Lap. Kunjungan
-            </button>
-            <button
-              type="button"
-              onClick={() => void withAutoSave(() => onChangeSheet('layanan'))}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                sheet === 'layanan'
-                  ? 'bg-white text-[#0D7A6F] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2. Lap. Layanan Lansia
-            </button>
-          </div>
-
           {/* Save Actions */}
           <div className="flex flex-wrap items-center gap-2">
             {isDirty && (
@@ -253,15 +223,9 @@ export function InputWorkspace({
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#0D7A6F] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0A645B] disabled:opacity-50"
             >
               <span>
-                {lockedKelIdx !== null
-                  ? sheet === 'kunjungan'
-                    ? 'Simpan & Lanjut ke Layanan'
-                    : 'Simpan Selesai'
-                  : kelurahanIdx < KELURAHAN_LIST.length - 1
-                    ? `Simpan & ${KELURAHAN_LIST[kelurahanIdx + 1].name}`
-                    : sheet === 'kunjungan'
-                      ? 'Simpan & Lanjut ke Layanan'
-                      : 'Simpan Selesai'}
+                {lockedKelIdx === null && kelurahanIdx < KELURAHAN_LIST.length - 1
+                  ? `Simpan & ${KELURAHAN_LIST[kelurahanIdx + 1].name}`
+                  : 'Simpan Selesai'}
               </span>
               <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -273,17 +237,21 @@ export function InputWorkspace({
           {KELURAHAN_LIST.map((kel) => {
             const active = kel.idx === kelurahanIdx;
             const disabled = lockedKelIdx !== null && kel.idx !== lockedKelIdx;
-            const filled =
-              sheet === 'kunjungan'
-                ? liveKunjunganYear[month].rows[kel.idx].hasInput
-                : liveLayananMonth.rows[kel.idx].hasInput;
+            const kFilled = liveKunjunganYear[month].rows[kel.idx].hasInput;
+            const lFilled = liveLayananMonth.rows[kel.idx].hasInput;
+            const bothFilled = kFilled && lFilled;
+            const partialFilled = kFilled || lFilled;
 
             return (
               <button
                 key={kel.id}
                 type="button"
                 disabled={disabled}
-                title={disabled ? `Akun Anda khusus Kelurahan ${KELURAHAN_LIST[lockedKelIdx!]?.name}` : undefined}
+                title={
+                  disabled
+                    ? `Akun Anda khusus Kelurahan ${KELURAHAN_LIST[lockedKelIdx!]?.name}`
+                    : undefined
+                }
                 onClick={() => void withAutoSave(() => onChangeKelurahan(kel.idx))}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                   active
@@ -293,12 +261,17 @@ export function InputWorkspace({
                       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {filled && (
+                {bothFilled ? (
                   <Check
                     className={`h-3.5 w-3.5 ${active ? 'text-teal-100' : 'text-emerald-600'}`}
                     aria-hidden="true"
                   />
-                )}
+                ) : partialFilled ? (
+                  <span
+                    className={`h-2 w-2 rounded-full ${active ? 'bg-amber-200' : 'bg-amber-500'}`}
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <span>
                   {kel.idx + 1}. {kel.name}
                 </span>
@@ -318,41 +291,33 @@ export function InputWorkspace({
         )}
       </div>
 
-      {/* Main Form + Sticky Live Summary */}
+      {/* Main Unified Form + Sticky Live Summary */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 lg:col-span-8">
-          {sheet === 'kunjungan' ? (
-            <KunjunganFormSteps
-              month={month}
-              kelurahanName={KELURAHAN_LIST[kelurahanIdx].name}
-              step={kStep}
-              onChangeStep={setKStep}
-              draft={kDraft}
-              computed={currentKComputed}
-              onChangeField={(field, value) => {
-                setKDraft((prev) => ({ ...prev, [field]: value }));
-                setIsDirty(true);
-              }}
-              onCopyPosyanduPrevMonth={() => void handleCopyPosyandu()}
-              isCopyingPosyandu={isCopying}
-            />
-          ) : (
-            <LayananFormSteps
-              kelurahanName={KELURAHAN_LIST[kelurahanIdx].name}
-              step={lStep}
-              onChangeStep={setLStep}
-              draft={lDraft}
-              computed={currentLComputed}
-              onChangeNum={(field, value) => {
-                setLDraft((prev) => ({ ...prev, [field]: value }));
-                setIsDirty(true);
-              }}
-              onChangeText={(value) => {
-                setLDraft((prev) => ({ ...prev, keterangan: value }));
-                setIsDirty(true);
-              }}
-            />
-          )}
+          <UnifiedFormSteps
+            month={month}
+            kelurahanName={KELURAHAN_LIST[kelurahanIdx].name}
+            step={step}
+            onChangeStep={onChangeStep}
+            kDraft={kDraft}
+            lDraft={lDraft}
+            kComputed={currentKComputed}
+            lComputed={currentLComputed}
+            onChangeKunjungan={(field, value) => {
+              setKDraft((prev) => ({ ...prev, [field]: value }));
+              setDirtyK(true);
+            }}
+            onChangeLayananNum={(field, value) => {
+              setLDraft((prev) => ({ ...prev, [field]: value }));
+              setDirtyL(true);
+            }}
+            onChangeLayananText={(value) => {
+              setLDraft((prev) => ({ ...prev, keterangan: value }));
+              setDirtyL(true);
+            }}
+            onCopyPosyanduPrevMonth={() => void handleCopyPosyandu()}
+            isCopyingPosyandu={isCopying}
+          />
         </div>
 
         {/* Sticky Live Summary */}
@@ -360,89 +325,103 @@ export function InputWorkspace({
           <div className="sticky top-28 space-y-4">
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <h3 className="text-sm font-semibold text-slate-900">
-                Hasil Hitung Otomatis — {KELURAHAN_LIST[kelurahanIdx].name}
+                Ringkasan Langsung — {KELURAHAN_LIST[kelurahanIdx].name}
               </h3>
-              <p className="mb-4 text-xs text-slate-500">
-                {MONTH_TITLES[month - 1]} {report.year} (diperbarui langsung saat mengetik)
+              <p className="mb-3 text-xs text-slate-500">
+                {MONTH_TITLES[month - 1]} {report.year} (diperbarui otomatis)
               </p>
 
-              {sheet === 'kunjungan' ? (
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Kunjungan Baru Bln Ini</span>
-                    <span className="font-semibold text-slate-900 tabular-nums">
-                      {currentKComputed.kunjunganBaruBulanIni}
+              <div className="space-y-2.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Kunjungan Baru Bln Ini</span>
+                  <span className="font-semibold text-slate-900 tabular-nums">
+                    {currentKComputed.kunjunganBaruBulanIni}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>• Dalam / Luar Gedung</span>
+                  <span className="tabular-nums">
+                    {currentKComputed.dalamGedungBaruBulanIni} /{' '}
+                    {currentKComputed.luarGedungBaruBulanIni}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Komdat &gt;60 Th</span>
+                  <span className="font-semibold text-[#0D7A6F] tabular-nums">
+                    {currentKComputed.komdatTotal} / {currentKComputed.sasTotal60}
+                  </span>
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-xs">
+                    <span className="font-medium text-slate-600">Capaian Standar (&gt;60 Th)</span>
+                    <span className="font-bold text-[#0D7A6F] tabular-nums">
+                      {currentKComputed.komdatPct.toFixed(1)}%
                     </span>
                   </div>
-                  <div className="flex justify-between text-xs text-slate-500">
-                    <span>• Dalam Gedung / Luar Gedung</span>
-                    <span className="tabular-nums">
-                      {currentKComputed.dalamGedungBaruBulanIni} /{' '}
-                      {currentKComputed.luarGedungBaruBulanIni}
-                    </span>
-                  </div>
-
-                  <hr className="border-slate-100" />
-
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Sasaran Lansia &gt;60 Th</span>
-                    <span className="font-semibold text-slate-900 tabular-nums">
-                      {currentKComputed.sasTotal60}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Kumulatif Komdat &gt;60 Th</span>
-                    <span className="font-semibold text-[#0D7A6F] tabular-nums">
-                      {currentKComputed.komdatTotal} (L:{currentKComputed.komdatL}, P:
-                      {currentKComputed.komdatP})
-                    </span>
-                  </div>
-
-                  <div>
-                    <div className="mb-1 flex justify-between text-xs">
-                      <span className="font-medium text-slate-600">Capaian Standar (&gt;60 Th)</span>
-                      <span className="font-bold text-[#0D7A6F] tabular-nums">
-                        {currentKComputed.komdatPct.toFixed(2)}%
-                      </span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-[#0D7A6F] transition-all"
-                        style={{ width: `${Math.min(100, currentKComputed.komdatPct)}%` }}
-                      />
-                    </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-[#0D7A6F] transition-all"
+                      style={{ width: `${Math.min(100, currentKComputed.komdatPct)}%` }}
+                    />
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Sasaran Layanan &gt;60 Th</span>
-                    <span className="font-semibold text-slate-900 tabular-nums">
-                      {currentLComputed.sasTotal60}
-                    </span>
-                  </div>
-                  <hr className="border-slate-100" />
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Kelainan Laki-laki (AL)</span>
-                    <span className="font-semibold text-slate-900 tabular-nums">
-                      {currentLComputed.kelainanL}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Kelainan Perempuan (AM)</span>
-                    <span className="font-semibold text-slate-900 tabular-nums">
-                      {currentLComputed.kelainanP}
-                    </span>
-                  </div>
-                  <div className="flex justify-between rounded-lg bg-[#F0FDFA] px-3 py-2 font-semibold text-[#0A645B]">
-                    <span>Total Kelainan (AN)</span>
-                    <span className="tabular-nums">{currentLComputed.kelainanTotal}</span>
-                  </div>
+
+                <hr className="border-slate-100" />
+
+                <div className="flex justify-between rounded-lg bg-[#F0FDFA] px-3 py-2 text-xs font-semibold text-[#0A645B]">
+                  <span>Total Kelainan (L / P)</span>
+                  <span className="tabular-nums">
+                    {currentLComputed.kelainanTotal} ({currentLComputed.kelainanL} /{' '}
+                    {currentLComputed.kelainanP})
+                  </span>
                 </div>
-              )}
+              </div>
             </div>
 
-            {sheet === 'kunjungan' && warnings.length > 0 && (
+            {/* Unified 4-Step Checklist */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h4 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Kelengkapan 4 Langkah
+              </h4>
+              <div className="space-y-1.5">
+                {UNIFIED_STEPS.map((s) => {
+                  const st = unifiedStepStates[s.id];
+                  const active = step === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onChangeStep(s.id)}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                        active
+                          ? 'border-[#0D7A6F] bg-[#F0FDFA]'
+                          : 'border-slate-100 bg-slate-50/70 hover:bg-slate-100/70'
+                      }`}
+                    >
+                      <div>
+                        <span className="font-semibold text-slate-800">
+                          {s.num}. {st.title}
+                        </span>
+                        <span className="ml-1.5 text-[11px] text-slate-500 tabular-nums">
+                          ({st.filledCount}/{st.totalCount})
+                        </span>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          st.filled
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        {st.filled ? 'Terisi' : 'Kosong'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {warnings.length > 0 && (
               <div
                 role="alert"
                 className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900"

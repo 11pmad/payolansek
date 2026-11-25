@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import type {
   AuthUser,
@@ -22,10 +22,12 @@ import {
   saveLayanan,
   saveSettings,
 } from './api.js';
-import { AppHeader, type NavTab } from './components/AppHeader.js';
+import { AppHeader } from './components/AppHeader.js';
+import { pathToTab, TAB_TITLES, TAB_TO_PATH, type NavTab } from './routes.js';
 import { AnalyticsView } from './components/AnalyticsView.js';
 import { DashboardView } from './components/DashboardView.js';
 import { InputWorkspace } from './components/InputWorkspace.js';
+import type { UnifiedStepId } from './components/UnifiedFormSteps.js';
 import { LoginView } from './components/LoginView.js';
 import { TablePreviewView } from './components/TablePreviewView.js';
 import { SettingsView } from './components/SettingsView.js';
@@ -41,10 +43,24 @@ export default function App() {
   const [years, setYears] = useState<YearSummary[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(currentCalendarYear);
   const [report, setReport] = useState<YearReportData | null>(null);
-  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const initialTab = pathToTab(window.location.pathname) ?? 'dashboard';
+  const intendedTabRef = useRef<NavTab | null>(pathToTab(window.location.pathname));
+  const [activeTab, setActiveTab] = useState<NavTab>(initialTab);
   const [selectedMonth, setSelectedMonth] = useState<number>(currentCalendarMonth);
   const [selectedKelurahan, setSelectedKelurahan] = useState<number>(0);
-  const [selectedSheet, setSelectedSheet] = useState<'kunjungan' | 'layanan'>('kunjungan');
+  const [selectedInputStep, setSelectedInputStep] = useState<UnifiedStepId>('kunjungan');
+
+  const navigateTo = useCallback((tab: NavTab, replace = false) => {
+    setActiveTab(tab);
+    const targetPath = TAB_TO_PATH[tab];
+    if (window.location.pathname !== targetPath) {
+      if (replace) {
+        window.history.replaceState(null, '', targetPath);
+      } else {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  }, []);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -94,7 +110,9 @@ export default function App() {
   const bootstrapForUser = async (authedUser: AuthUser) => {
     setUser(authedUser);
     setSelectedKelurahan(authedUser.kelurahanIdx ?? 0);
-    setActiveTab('dashboard');
+    const targetTab = pathToTab(window.location.pathname) ?? intendedTabRef.current ?? 'dashboard';
+    intendedTabRef.current = null;
+    navigateTo(targetTab, true);
     setIsLoading(true);
     try {
       const yrs = await fetchYears();
@@ -121,6 +139,38 @@ export default function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (!user) return;
+      const tabFromUrl = pathToTab(window.location.pathname);
+      if (tabFromUrl) {
+        setActiveTab(tabFromUrl);
+      } else {
+        window.history.replaceState(null, '', TAB_TO_PATH[activeTab]);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [user, activeTab]);
+
+  useEffect(() => {
+    if (isCheckingAuth) return;
+    if (!user) {
+      if (window.location.pathname !== '/login') {
+        const requested = pathToTab(window.location.pathname);
+        if (requested) intendedTabRef.current = requested;
+        window.history.replaceState(null, '', '/login');
+      }
+      document.title = 'Masuk — SIMLANSIA Payolansek';
+      return;
+    }
+
+    document.title = `${TAB_TITLES[activeTab]} — SIMLANSIA Payolansek`;
+    if (!pathToTab(window.location.pathname)) {
+      window.history.replaceState(null, '', TAB_TO_PATH[activeTab]);
+    }
+  }, [isCheckingAuth, user, activeTab]);
 
   const kunjunganYear = useMemo(
     () => (report ? computeYearKunjungan(report.kunjungan) : {}),
@@ -223,6 +273,8 @@ export default function App() {
       setUser(null);
       setReport(null);
       setToast(null);
+      intendedTabRef.current = null;
+      window.history.replaceState(null, '', '/login');
     }
   };
 
@@ -244,7 +296,7 @@ export default function App() {
         user={user}
         onLogout={() => void handleLogout()}
         activeTab={activeTab}
-        onChangeTab={setActiveTab}
+        onChangeTab={(tab) => navigateTo(tab)}
         years={years}
         selectedYear={selectedYear}
         onSelectYear={(y) => void loadYearData(y, true)}
@@ -255,7 +307,7 @@ export default function App() {
         isImporting={isImporting}
       />
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-7xl px-3 py-3.5 sm:px-6 sm:py-5">
         {toast && (
           <div
             role="status"
@@ -300,8 +352,8 @@ export default function App() {
                       : kelIdx;
                   setSelectedMonth(m);
                   setSelectedKelurahan(targetKel);
-                  setSelectedSheet(sh);
-                  setActiveTab('input');
+                  setSelectedInputStep(sh === 'layanan' ? 'kelainan' : 'kunjungan');
+                  navigateTo('input');
                 }}
               />
             )}
@@ -322,10 +374,10 @@ export default function App() {
                 report={report}
                 month={selectedMonth}
                 kelurahanIdx={selectedKelurahan}
-                sheet={selectedSheet}
+                step={selectedInputStep}
                 onChangeMonth={setSelectedMonth}
                 onChangeKelurahan={setSelectedKelurahan}
-                onChangeSheet={setSelectedSheet}
+                onChangeStep={setSelectedInputStep}
                 onSaveKunjungan={handleSaveKunjungan}
                 onSaveLayanan={handleSaveLayanan}
                 onCopyPosyanduPrevMonth={handleCopyPosyandu}

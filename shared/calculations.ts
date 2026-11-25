@@ -544,3 +544,159 @@ export const KELAINAN_DEFINITIONS: ReadonlyArray<{
   { id: 'ggnPendengaran', label: 'Gangguan Pendengaran', lKey: 'ggnPendengaranL', pKey: 'ggnPendengaranP' },
   { id: 'lainLain', label: 'Lain-lain', lKey: 'lainLainL', pKey: 'lainLainP' },
 ] as const;
+
+export type LayananPageId = 'kelainan' | 'pengobatan' | 'lainnya';
+export type KunjunganPageId = 'dalam' | 'luar' | 'kemandirian' | 'posyandu';
+
+export interface StepStatusItem<T extends string> {
+  id: T;
+  label: string;
+  filled: boolean;
+  filledCount: number;
+  totalCount: number;
+}
+
+function countFilledFields<T extends object>(row: T, keys: ReadonlyArray<keyof T>): number {
+  let cnt = 0;
+  for (const k of keys) {
+    const val = row[k];
+    if (val !== null && val !== undefined) cnt += 1;
+  }
+  return cnt;
+}
+
+const LAYANAN_KELAINAN_KEYS: ReadonlyArray<keyof LayananInput> = [
+  'ggnMeL', 'ggnMeP',
+  'imtLebihL', 'imtLebihP',
+  'imtKurangL', 'imtKurangP',
+  'tdTinggiL', 'tdTinggiP',
+  'tdRendahL', 'tdRendahP',
+  'hbKurangL', 'hbKurangP',
+  'kolesterolL', 'kolesterolP',
+  'dmL', 'dmP',
+  'asamUratL', 'asamUratP',
+  'ggnGinjalL', 'ggnGinjalP',
+  'ggnKognitifL', 'ggnKognitifP',
+  'ggnPenglihatanL', 'ggnPenglihatanP',
+  'ggnPendengaranL', 'ggnPendengaranP',
+  'lainLainL', 'lainLainP',
+];
+
+const LAYANAN_PENGOBATAN_KEYS: ReadonlyArray<keyof LayananInput> = [
+  'diedukasi',
+  'diobati',
+  'dirujuk',
+  'konselingBaru',
+  'konselingLama',
+  'konselingSelesai',
+];
+
+const LAYANAN_LAINNYA_KEYS: ReadonlyArray<keyof LayananInput> = [
+  'penyuluhan',
+  'aktifBekerja',
+  'pantiWredha',
+  'homecare',
+];
+
+export function getLayananStepStatus(row: LayananInput): {
+  steps: Record<LayananPageId, StepStatusItem<LayananPageId>>;
+  ordered: StepStatusItem<LayananPageId>[];
+  emptySteps: StepStatusItem<LayananPageId>[];
+} {
+  const kCount = countFilledFields(row, LAYANAN_KELAINAN_KEYS);
+  const pCount = countFilledFields(row, LAYANAN_PENGOBATAN_KEYS);
+  const lCount = countFilledFields(row, LAYANAN_LAINNYA_KEYS);
+
+  const steps: Record<LayananPageId, StepStatusItem<LayananPageId>> = {
+    kelainan: {
+      id: 'kelainan',
+      label: 'Kelainan',
+      filled: kCount > 0,
+      filledCount: kCount,
+      totalCount: LAYANAN_KELAINAN_KEYS.length,
+    },
+    pengobatan: {
+      id: 'pengobatan',
+      label: 'Pengobatan',
+      filled: pCount > 0,
+      filledCount: pCount,
+      totalCount: LAYANAN_PENGOBATAN_KEYS.length,
+    },
+    lainnya: {
+      id: 'lainnya',
+      label: 'Penyuluhan',
+      filled: lCount > 0,
+      filledCount: lCount,
+      totalCount: LAYANAN_LAINNYA_KEYS.length,
+    },
+  };
+
+  const ordered = [steps.kelainan, steps.pengobatan, steps.lainnya];
+  return {
+    steps,
+    ordered,
+    emptySteps: ordered.filter((s) => !s.filled),
+  };
+}
+
+const KUNJUNGAN_DALAM_KEYS: ReadonlyArray<keyof KunjunganInput> = [
+  'dg45_59L', 'dg45_59P', 'dg60_69L', 'dg60_69P', 'dg70L', 'dg70P',
+];
+const KUNJUNGAN_LUAR_KEYS: ReadonlyArray<keyof KunjunganInput> = [
+  'lg45_59L', 'lg45_59P', 'lg60_69L', 'lg60_69P', 'lg70L', 'lg70P',
+];
+const KUNJUNGAN_KEM_KEYS: ReadonlyArray<keyof KunjunganInput> = [
+  'kem60_69A', 'kem60_69B', 'kem60_69C', 'kem70A', 'kem70B', 'kem70C',
+];
+const KUNJUNGAN_POS_KEYS: ReadonlyArray<keyof KunjunganInput> = [
+  'jmlPosyandu', 'pemberdayaanLansia', 'posyanduPtm', 'jmlKader', 'kaderTerlatih', 'jmlJkn',
+];
+
+export function getKunjunganStepStatus(row: KunjunganInput): {
+  steps: Record<KunjunganPageId, StepStatusItem<KunjunganPageId>>;
+  ordered: StepStatusItem<KunjunganPageId>[];
+  emptySteps: StepStatusItem<KunjunganPageId>[];
+} {
+  const dCount = countFilledFields(row, KUNJUNGAN_DALAM_KEYS);
+  const lCount = countFilledFields(row, KUNJUNGAN_LUAR_KEYS);
+  const kCount = countFilledFields(row, KUNJUNGAN_KEM_KEYS);
+  const pCount = countFilledFields(row, KUNJUNGAN_POS_KEYS);
+
+  const steps: Record<KunjunganPageId, StepStatusItem<KunjunganPageId>> = {
+    dalam: {
+      id: 'dalam',
+      label: 'Dalam Gedung',
+      filled: dCount > 0,
+      filledCount: dCount,
+      totalCount: KUNJUNGAN_DALAM_KEYS.length,
+    },
+    luar: {
+      id: 'luar',
+      label: 'Luar Gedung',
+      filled: lCount > 0,
+      filledCount: lCount,
+      totalCount: KUNJUNGAN_LUAR_KEYS.length,
+    },
+    kemandirian: {
+      id: 'kemandirian',
+      label: 'Kemandirian',
+      filled: kCount > 0,
+      filledCount: kCount,
+      totalCount: KUNJUNGAN_KEM_KEYS.length,
+    },
+    posyandu: {
+      id: 'posyandu',
+      label: 'Posyandu & JKN',
+      filled: pCount > 0,
+      filledCount: pCount,
+      totalCount: KUNJUNGAN_POS_KEYS.length,
+    },
+  };
+
+  const ordered = [steps.dalam, steps.luar, steps.kemandirian, steps.posyandu];
+  return {
+    steps,
+    ordered,
+    emptySteps: ordered.filter((s) => !s.filled),
+  };
+}

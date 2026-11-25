@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  HelpCircle,
   Stethoscope,
   Users,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import {
   type KunjunganMonthComputed,
   type LayananMonthComputed,
 } from '../../shared/types.js';
+import { getLayananStepStatus } from '../../shared/calculations.js';
 
 interface DashboardViewProps {
   year: number;
@@ -54,9 +56,9 @@ export function DashboardView({
         : 'bg-slate-300';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       {/* Compact Single-Row Period Bar + Collapsible 12-Month Grid */}
-      <section aria-label="Pilih bulan laporan" className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5">
+      <section aria-label="Pilih bulan laporan" className="rounded-xl border border-slate-200 bg-white px-3 py-2 sm:px-3.5 sm:py-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           {/* Left: Prev / Select / Next / Quick Jump */}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -213,37 +215,39 @@ export function DashboardView({
       </section>
 
       {/* 4 KPI Cards */}
-      <section aria-label="Ringkasan capaian bulan terpilih" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">Sasaran Lansia &gt;60 Th</span>
-            <Users className="h-4 w-4 text-[#0D7A6F]" aria-hidden="true" />
+      <section aria-label="Ringkasan capaian bulan terpilih" className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3.5">
+          <div className="flex items-start justify-between gap-1.5">
+            <span className="text-[11px] font-medium leading-tight text-slate-500 sm:text-xs">
+              Sasaran Lansia &gt;60 Th
+            </span>
+            <Users className="h-3.5 w-3.5 shrink-0 text-[#0D7A6F] sm:h-4 sm:w-4" aria-hidden="true" />
           </div>
-          <p className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
+          <p className="mt-1 text-lg font-bold text-slate-900 tabular-nums sm:mt-1.5 sm:text-2xl">
             {monthK.totals.sasTotal60.toLocaleString('id-ID')}
           </p>
-          <p className="mt-1 text-xs text-slate-500 tabular-nums">
-            L: {( (monthK.totals.sas60_69L ?? 0) + (monthK.totals.sas70L ?? 0) ).toLocaleString('id-ID')} • P:{' '}
-            {( (monthK.totals.sas60_69P ?? 0) + (monthK.totals.sas70P ?? 0) ).toLocaleString('id-ID')}
+          <p className="mt-0.5 text-[11px] text-slate-500 tabular-nums sm:mt-1 sm:text-xs">
+            L: {((monthK.totals.sas60_69L ?? 0) + (monthK.totals.sas70L ?? 0)).toLocaleString('id-ID')} • P:{' '}
+            {((monthK.totals.sas60_69P ?? 0) + (monthK.totals.sas70P ?? 0)).toLocaleString('id-ID')}
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">
-              Dilayani Standar &gt;60 Th (Komdat)
+        <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3.5">
+          <div className="flex items-start justify-between gap-1.5">
+            <span className="text-[11px] font-medium leading-tight text-slate-500 sm:text-xs">
+              Dilayani Standar &gt;60 Th
             </span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 sm:h-4 sm:w-4" aria-hidden="true" />
           </div>
-          <div className="mt-1.5 flex items-baseline gap-2">
-            <p className="text-2xl font-bold text-slate-900 tabular-nums">
-              {monthK.totals.komdatTotal.toLocaleString('id-ID')}
-            </p>
-            <span className="rounded-md bg-[#ECFDF5] px-2 py-0.5 text-xs font-semibold text-[#0D7A6F] tabular-nums">
+          <div className="mt-1 flex flex-wrap items-baseline gap-1.5 sm:mt-1.5 sm:gap-2">
+            <p className="text-lg font-bold text-[#0D7A6F] tabular-nums sm:text-2xl">
               {pctTotal.toFixed(1)}%
+            </p>
+            <span className="text-[11px] font-medium text-slate-500 tabular-nums sm:text-xs">
+              ({monthK.totals.komdatTotal.toLocaleString('id-ID')} lansia)
             </span>
           </div>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 sm:mt-2">
             <div
               className="h-full rounded-full bg-[#0D7A6F] transition-all"
               style={{ width: `${Math.min(100, pctTotal)}%` }}
@@ -251,34 +255,44 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">
-              Kunjungan Baru ({MONTH_TITLES[selectedMonth - 1]})
+        <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3.5">
+          <div className="flex items-start justify-between gap-1.5">
+            <span className="text-[11px] font-medium leading-tight text-slate-500 sm:text-xs">
+              Kunj. Baru ({MONTH_TITLES[selectedMonth - 1].slice(0, 3)})
             </span>
-            <Clock className="h-4 w-4 text-sky-600" aria-hidden="true" />
+            <Clock className="h-3.5 w-3.5 shrink-0 text-sky-600 sm:h-4 sm:w-4" aria-hidden="true" />
           </div>
-          <p className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
+          <p className="mt-1 text-lg font-bold text-slate-900 tabular-nums sm:mt-1.5 sm:text-2xl">
             {monthK.totals.kunjunganBaruBulanIni.toLocaleString('id-ID')}
           </p>
-          <p className="mt-1 text-xs text-slate-500 tabular-nums">
-            Dalam Gedung: {monthK.totals.dalamGedungBaruBulanIni} • Luar Gedung:{' '}
-            {monthK.totals.luarGedungBaruBulanIni}
+          <p className="mt-0.5 text-[11px] text-slate-500 tabular-nums sm:mt-1 sm:text-xs">
+            <span className="sm:hidden">
+              DG: {monthK.totals.dalamGedungBaruBulanIni} • LG: {monthK.totals.luarGedungBaruBulanIni}
+            </span>
+            <span className="hidden sm:inline">
+              Dalam Gedung: {monthK.totals.dalamGedungBaruBulanIni} • Luar Gedung:{' '}
+              {monthK.totals.luarGedungBaruBulanIni}
+            </span>
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">
-              Layanan dgn Kelainan ({MONTH_TITLES[selectedMonth - 1]})
+        <div className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3.5">
+          <div className="flex items-start justify-between gap-1.5">
+            <span className="text-[11px] font-medium leading-tight text-slate-500 sm:text-xs">
+              Kelainan ({MONTH_TITLES[selectedMonth - 1].slice(0, 3)})
             </span>
-            <Stethoscope className="h-4 w-4 text-amber-600" aria-hidden="true" />
+            <Stethoscope className="h-3.5 w-3.5 shrink-0 text-amber-600 sm:h-4 sm:w-4" aria-hidden="true" />
           </div>
-          <p className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
+          <p className="mt-1 text-lg font-bold text-slate-900 tabular-nums sm:mt-1.5 sm:text-2xl">
             {monthL.totals.kelainanTotal.toLocaleString('id-ID')}
           </p>
-          <p className="mt-1 text-xs text-slate-500 tabular-nums">
-            Laki-laki: {monthL.totals.kelainanL} • Perempuan: {monthL.totals.kelainanP}
+          <p className="mt-0.5 text-[11px] text-slate-500 tabular-nums sm:mt-1 sm:text-xs">
+            <span className="sm:hidden">
+              L: {monthL.totals.kelainanL} • P: {monthL.totals.kelainanP}
+            </span>
+            <span className="hidden sm:inline">
+              Laki-laki: {monthL.totals.kelainanL} • Perempuan: {monthL.totals.kelainanP}
+            </span>
           </p>
         </div>
       </section>
@@ -325,7 +339,7 @@ export function DashboardView({
         </section>
 
         {/* 6 Kelurahan Table */}
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white lg:col-span-2">
+        <section className="rounded-xl border border-slate-200 bg-white lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">
@@ -345,7 +359,7 @@ export function DashboardView({
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto sm:overflow-visible">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
@@ -363,6 +377,9 @@ export function DashboardView({
                   const kRow = monthK.rows[idx];
                   const lRow = monthL.rows[idx];
                   const pct = kRow.komdatPct;
+                  const layStatus = getLayananStepStatus(lRow);
+                  const defaultTargetSheet: 'kunjungan' | 'layanan' =
+                    kRow.hasInput && !lRow.hasInput ? 'layanan' : 'kunjungan';
                   return (
                     <tr key={kel.id} className="hover:bg-slate-50/70">
                       <td className="px-4 py-2.5 font-medium text-slate-900">{kel.name}</td>
@@ -389,25 +406,54 @@ export function DashboardView({
                         {lRow.kelainanTotal}
                       </td>
                       <td className="px-3 py-2.5">
-                        {kRow.hasInput && lRow.hasInput ? (
-                          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                            Lengkap
-                          </span>
-                        ) : kRow.hasInput || lRow.hasInput ? (
-                          <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
-                            {kRow.hasInput ? 'Layanan kosong' : 'Kunj. kosong'}
-                          </span>
-                        ) : (
-                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                            Kosong
-                          </span>
-                        )}
+                        {(() => {
+                          const emptyNames = layStatus.emptySteps.map((s) => s.label).join(', ');
+                          const showHint =
+                            (kRow.hasInput || lRow.hasInput) && layStatus.emptySteps.length > 0;
+                          const badge =
+                            kRow.hasInput && lRow.hasInput ? (
+                              <span className="inline-flex whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                Lengkap
+                              </span>
+                            ) : kRow.hasInput || lRow.hasInput ? (
+                              <span className="inline-flex whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                {kRow.hasInput ? 'Layanan kosong' : 'Kunj. kosong'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                Kosong
+                              </span>
+                            );
+
+                          if (!showHint) return badge;
+
+                          return (
+                            <div className="inline-flex items-center gap-1.5">
+                              {badge}
+                              <div className="group relative inline-flex items-center">
+                                <span
+                                  tabIndex={0}
+                                  aria-label={`Belum diisi: ${emptyNames}`}
+                                  className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full text-amber-700 focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/30"
+                                >
+                                  <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                                </span>
+                                <div
+                                  role="tooltip"
+                                  className="pointer-events-none absolute right-0 bottom-full z-30 mb-1.5 hidden w-max max-w-[220px] rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-normal text-white shadow-md group-hover:block group-focus-within:block"
+                                >
+                                  Belum diisi: {emptyNames}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <button
                           type="button"
-                          onClick={() => onGoToInput(selectedMonth, idx, 'kunjungan')}
-                          className="text-xs font-semibold text-[#0D7A6F] hover:text-[#0A645B] hover:underline"
+                          onClick={() => onGoToInput(selectedMonth, idx, defaultTargetSheet)}
+                          className="whitespace-nowrap text-xs font-semibold text-[#0D7A6F] hover:text-[#0A645B] hover:underline"
                         >
                           Input →
                         </button>

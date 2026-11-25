@@ -4,7 +4,9 @@ import {
   computeYearKunjungan,
   createEmptyKunjunganInput,
   createEmptyLayananInput,
+  getKunjunganStepStatus,
   getKunjunganWarnings,
+  getLayananStepStatus,
 } from '../shared/calculations.js';
 import { KELURAHAN_LIST } from '../shared/types.js';
 
@@ -88,5 +90,30 @@ describe('Calculation Engine', () => {
     const computed = computeYearKunjungan(months);
     expect(computed[11].rows[0].hasInput).toBe(false);
     expect(computed[11].filledCount).toBe(0);
+  });
+
+  it('reports empty and filled sub-pages for Layanan and Kunjungan rows', () => {
+    const lay = createEmptyLayananInput();
+    expect(getLayananStepStatus(lay).emptySteps.map((s) => s.id)).toEqual([
+      'kelainan',
+      'pengobatan',
+      'lainnya',
+    ]);
+
+    lay.diedukasi = 15;
+    const partialLay = getLayananStepStatus(lay);
+    expect(partialLay.steps.pengobatan.filled).toBe(true);
+    expect(partialLay.steps.pengobatan.filledCount).toBe(1);
+    expect(partialLay.emptySteps.map((s) => s.id)).toEqual(['kelainan', 'lainnya']);
+
+    const kunj = createEmptyKunjunganInput();
+    kunj.dg60_69L = 4;
+    const partialKunj = getKunjunganStepStatus(kunj);
+    expect(partialKunj.steps.dalam.filled).toBe(true);
+    expect(partialKunj.emptySteps.map((s) => s.id)).toEqual([
+      'luar',
+      'kemandirian',
+      'posyandu',
+    ]);
   });
 });

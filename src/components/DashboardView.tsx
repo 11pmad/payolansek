@@ -1,4 +1,16 @@
-import { ArrowRight, CheckCircle2, Clock, Stethoscope, Users } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ArrowRight,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Clock,
+  Stethoscope,
+  Users,
+} from 'lucide-react';
 import {
   KELURAHAN_LIST,
   MONTH_TITLES,
@@ -23,83 +35,191 @@ export function DashboardView({
   layananYear,
   onGoToInput,
 }: DashboardViewProps) {
+  const [showAllMonths, setShowAllMonths] = useState(false);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
   const monthK = kunjunganYear[selectedMonth];
   const monthL = layananYear[selectedMonth];
 
   const pctTotal = monthK?.totals.komdatPct ?? 0;
 
+  const statusDot =
+    monthK.filledCount === 6 && monthL.filledCount === 6
+      ? 'bg-emerald-600'
+      : monthK.filledCount > 0 || monthL.filledCount > 0
+        ? 'bg-amber-500'
+        : 'bg-slate-300';
+
   return (
-    <div className="space-y-6">
-      {/* 12-Month Selector Strip */}
-      <section aria-label="Pilih bulan laporan" className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Status Pengisian Bulanan Tahun {year}</h2>
-            <p className="text-xs text-slate-500">
-              Pilih bulan untuk melihat ringkasan atau melanjutkan input angka per kelurahan.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-600">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" aria-hidden="true" />
-              Lengkap (6/6)
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" aria-hidden="true" />
-              Sebagian
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-slate-300" aria-hidden="true" />
-              Belum diisi
-            </span>
-          </div>
-        </div>
+    <div className="space-y-4">
+      {/* Compact Single-Row Period Bar + Collapsible 12-Month Grid */}
+      <section aria-label="Pilih bulan laporan" className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Left: Prev / Select / Next / Quick Jump */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              disabled={selectedMonth <= 1}
+              aria-label="Bulan sebelumnya"
+              onClick={() => onSelectMonth(selectedMonth - 1)}
+              className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
 
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-12">
-          {MONTH_TITLES.map((title, idx) => {
-            const m = idx + 1;
-            const kFilled = kunjunganYear[m]?.filledCount ?? 0;
-            const lFilled = layananYear[m]?.filledCount ?? 0;
-            const isSelected = m === selectedMonth;
-            const dotColor =
-              kFilled === 6 && lFilled === 6
-                ? 'bg-emerald-600'
-                : kFilled > 0 || lFilled > 0
-                  ? 'bg-amber-500'
-                  : 'bg-slate-300';
+            <label htmlFor="dash-month-select" className="sr-only">
+              Pilih Bulan Laporan
+            </label>
+            <select
+              id="dash-month-select"
+              value={selectedMonth}
+              onChange={(e) => onSelectMonth(Number(e.target.value))}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 focus:border-[#0D7A6F] focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/20"
+            >
+              {MONTH_TITLES.map((title, idx) => {
+                const m = idx + 1;
+                const isCur = year === currentYear && m === currentMonth;
+                return (
+                  <option key={m} value={m}>
+                    {title} {year}
+                    {isCur ? ' (Bulan Ini)' : ''}
+                  </option>
+                );
+              })}
+            </select>
 
-            return (
+            <button
+              type="button"
+              disabled={selectedMonth >= 12}
+              aria-label="Bulan berikutnya"
+              onClick={() => onSelectMonth(selectedMonth + 1)}
+              className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </button>
+
+            {year === currentYear && selectedMonth !== currentMonth && (
               <button
-                key={m}
                 type="button"
-                onClick={() => onSelectMonth(m)}
-                className={`flex flex-col items-start rounded-lg border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/30 ${
-                  isSelected
-                    ? 'border-[#0D7A6F] bg-[#F0FDFA] text-[#0A645B]'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                onClick={() => onSelectMonth(currentMonth)}
+                className="ml-1 rounded-lg border border-[#0D7A6F]/30 bg-[#F0FDFA] px-2.5 py-1 text-xs font-semibold text-[#0D7A6F] hover:bg-teal-100/70"
               >
-                <div className="flex w-full items-center justify-between gap-1">
-                  <span className="text-xs font-semibold">{title.slice(0, 3)}</span>
-                  <span className={`h-2 w-2 rounded-full ${dotColor}`} aria-hidden="true" />
-                </div>
-                <span className="mt-1 text-[11px] text-slate-500 tabular-nums">
-                  {kFilled}/6 • {lFilled}/6
-                </span>
+                Bulan Ini
               </button>
-            );
-          })}
+            )}
+          </div>
+
+          {/* Right: Inline Status + Toggle 12-Month Drawer */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-2 text-xs text-slate-600 tabular-nums">
+              <span className={`h-2 w-2 rounded-full ${statusDot}`} aria-hidden="true" />
+              <span>
+                Kunj. <strong className="text-slate-900">{monthK.filledCount}/6</strong>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                Lay. <strong className="text-slate-900">{monthL.filledCount}/6</strong>
+              </span>
+            </div>
+
+            <button
+              type="button"
+              aria-expanded={showAllMonths}
+              onClick={() => setShowAllMonths((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              <CalendarDays className="h-3.5 w-3.5 text-[#0D7A6F]" aria-hidden="true" />
+              <span>Semua Bulan</span>
+              {showAllMonths ? (
+                <ChevronUp className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Collapsible 12-Month Grid */}
+        {showAllMonths && (
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+              {MONTH_TITLES.map((title, idx) => {
+                const m = idx + 1;
+                const kFilled = kunjunganYear[m]?.filledCount ?? 0;
+                const lFilled = layananYear[m]?.filledCount ?? 0;
+                const isSelected = m === selectedMonth;
+                const isCurrentCal = year === currentYear && m === currentMonth;
+                const isFuture = year > currentYear || (year === currentYear && m > currentMonth);
+                const pctProgress = ((kFilled + lFilled) / 12) * 100;
+
+                const barColor =
+                  kFilled === 6 && lFilled === 6
+                    ? 'bg-emerald-600'
+                    : kFilled > 0 || lFilled > 0
+                      ? 'bg-amber-500'
+                      : 'bg-slate-300';
+
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    title={`${title} ${year}: Kunjungan ${kFilled}/6, Layanan ${lFilled}/6`}
+                    onClick={() => {
+                      onSelectMonth(m);
+                      setShowAllMonths(false);
+                    }}
+                    className={`flex flex-col rounded-lg border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-[#0D7A6F]/30 ${
+                      isSelected
+                        ? 'border-[#0D7A6F] bg-[#F0FDFA]'
+                        : isCurrentCal
+                          ? 'border-[#0D7A6F]/40 bg-white ring-1 ring-[#0D7A6F]/25 hover:bg-slate-50'
+                          : isFuture
+                            ? 'border-slate-200 bg-slate-50/70 hover:bg-slate-100/70'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between gap-1">
+                      <span
+                        className={`text-xs font-semibold ${
+                          isSelected ? 'text-[#0A645B]' : isFuture ? 'text-slate-500' : 'text-slate-900'
+                        }`}
+                      >
+                        {title}
+                      </span>
+                      {isCurrentCal && (
+                        <span className="rounded-full bg-[#0D7A6F] px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          Ini
+                        </span>
+                      )}
+                    </div>
+                    <span className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                      {kFilled}/6 • {lFilled}/6
+                    </span>
+                    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-200/80">
+                      <div
+                        className={`h-full rounded-full ${barColor}`}
+                        style={{ width: `${pctProgress}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 4 KPI Cards */}
-      <section aria-label="Ringkasan capaian bulan terpilih" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <section aria-label="Ringkasan capaian bulan terpilih" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">Sasaran Lansia &gt;60 Th</span>
             <Users className="h-4 w-4 text-[#0D7A6F]" aria-hidden="true" />
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
+          <p className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
             {monthK.totals.sasTotal60.toLocaleString('id-ID')}
           </p>
           <p className="mt-1 text-xs text-slate-500 tabular-nums">
@@ -108,14 +228,14 @@ export function DashboardView({
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">
               Dilayani Standar &gt;60 Th (Komdat)
             </span>
             <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
+          <div className="mt-1.5 flex items-baseline gap-2">
             <p className="text-2xl font-bold text-slate-900 tabular-nums">
               {monthK.totals.komdatTotal.toLocaleString('id-ID')}
             </p>
@@ -131,14 +251,14 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">
               Kunjungan Baru ({MONTH_TITLES[selectedMonth - 1]})
             </span>
             <Clock className="h-4 w-4 text-sky-600" aria-hidden="true" />
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
+          <p className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
             {monthK.totals.kunjunganBaruBulanIni.toLocaleString('id-ID')}
           </p>
           <p className="mt-1 text-xs text-slate-500 tabular-nums">
@@ -147,14 +267,14 @@ export function DashboardView({
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500">
               Layanan dgn Kelainan ({MONTH_TITLES[selectedMonth - 1]})
             </span>
             <Stethoscope className="h-4 w-4 text-amber-600" aria-hidden="true" />
           </div>
-          <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
+          <p className="mt-1.5 text-2xl font-bold text-slate-900 tabular-nums">
             {monthL.totals.kelainanTotal.toLocaleString('id-ID')}
           </p>
           <p className="mt-1 text-xs text-slate-500 tabular-nums">
@@ -164,13 +284,13 @@ export function DashboardView({
       </section>
 
       {/* Chart + Kelurahan Breakdown */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Monthly Trend SVG Chart */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-1">
           <h3 className="text-sm font-semibold text-slate-900">Tren Capaian Komdat &gt;60 Th</h3>
-          <p className="mb-4 text-xs text-slate-500">Persentase kumulatif Puskesmas Jan–Des {year}</p>
+          <p className="mb-3 text-xs text-slate-500">Persentase kumulatif Puskesmas Jan–Des {year}</p>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {MONTH_TITLES.map((title, idx) => {
               const m = idx + 1;
               const mData = kunjunganYear[m];
@@ -206,7 +326,7 @@ export function DashboardView({
 
         {/* 6 Kelurahan Table */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white lg:col-span-2">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">
                 Rincian per Kelurahan — {MONTH_TITLES[selectedMonth - 1]} {year}
@@ -229,13 +349,13 @@ export function DashboardView({
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-2.5 font-semibold">Kelurahan</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Kunj. Baru</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Komdat &gt;60</th>
-                  <th className="px-3 py-2.5 font-semibold">Capaian</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Kelainan</th>
-                  <th className="px-3 py-2.5 font-semibold">Status</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Aksi</th>
+                  <th className="px-4 py-2 font-semibold">Kelurahan</th>
+                  <th className="px-3 py-2 text-right font-semibold">Kunj. Baru</th>
+                  <th className="px-3 py-2 text-right font-semibold">Komdat &gt;60</th>
+                  <th className="px-3 py-2 font-semibold">Capaian</th>
+                  <th className="px-3 py-2 text-right font-semibold">Kelainan</th>
+                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-4 py-2 text-right font-semibold">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -245,14 +365,14 @@ export function DashboardView({
                   const pct = kRow.komdatPct;
                   return (
                     <tr key={kel.id} className="hover:bg-slate-50/70">
-                      <td className="px-4 py-3 font-medium text-slate-900">{kel.name}</td>
-                      <td className="px-3 py-3 text-right text-slate-700 tabular-nums">
+                      <td className="px-4 py-2.5 font-medium text-slate-900">{kel.name}</td>
+                      <td className="px-3 py-2.5 text-right text-slate-700 tabular-nums">
                         {kRow.kunjunganBaruBulanIni}
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-700 tabular-nums">
+                      <td className="px-3 py-2.5 text-right text-slate-700 tabular-nums">
                         {kRow.komdatTotal} / {kRow.sasTotal60}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-100">
                             <div
@@ -265,10 +385,10 @@ export function DashboardView({
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-700 tabular-nums">
+                      <td className="px-3 py-2.5 text-right text-slate-700 tabular-nums">
                         {lRow.kelainanTotal}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-2.5">
                         {kRow.hasInput && lRow.hasInput ? (
                           <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                             Lengkap
@@ -283,7 +403,7 @@ export function DashboardView({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-2.5 text-right">
                         <button
                           type="button"
                           onClick={() => onGoToInput(selectedMonth, idx, 'kunjungan')}
@@ -298,16 +418,16 @@ export function DashboardView({
               </tbody>
               <tfoot className="border-t border-slate-200 bg-slate-50 font-semibold text-slate-900">
                 <tr>
-                  <td className="px-4 py-3">JUMLAH PUSKESMAS</td>
-                  <td className="px-3 py-3 text-right tabular-nums">
+                  <td className="px-4 py-2.5">JUMLAH PUSKESMAS</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">
                     {monthK.totals.kunjunganBaruBulanIni}
                   </td>
-                  <td className="px-3 py-3 text-right tabular-nums">
+                  <td className="px-3 py-2.5 text-right tabular-nums">
                     {monthK.totals.komdatTotal} / {monthK.totals.sasTotal60}
                   </td>
-                  <td className="px-3 py-3 tabular-nums">{pctTotal.toFixed(1)}%</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{monthL.totals.kelainanTotal}</td>
-                  <td colSpan={2} className="px-4 py-3 text-right text-xs font-normal text-slate-500">
+                  <td className="px-3 py-2.5 tabular-nums">{pctTotal.toFixed(1)}%</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{monthL.totals.kelainanTotal}</td>
+                  <td colSpan={2} className="px-4 py-2.5 text-right text-xs font-normal text-slate-500">
                     Kunjungan {monthK.filledCount}/6 • Layanan {monthL.filledCount}/6
                   </td>
                 </tr>

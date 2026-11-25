@@ -76,4 +76,17 @@ describe('Calculation Engine', () => {
     const warnings = getKunjunganWarnings(computed[1].rows[0]);
     expect(warnings.length).toBeGreaterThan(0);
   });
+
+  it('treats months with only kemandirian values and null visits as unfilled (hasInput === false)', () => {
+    const months: Record<number, ReturnType<typeof createEmptyKunjunganInput>[]> = {};
+    for (let m = 1; m <= 12; m++) {
+      months[m] = KELURAHAN_LIST.map(() => createEmptyKunjunganInput());
+    }
+    months[11][0].kem60_69A = 32;
+    months[11][0].kem70A = 21;
+
+    const computed = computeYearKunjungan(months);
+    expect(computed[11].rows[0].hasInput).toBe(false);
+    expect(computed[11].filledCount).toBe(0);
+  });
 });

@@ -34,11 +34,15 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
+  const now = new Date();
+  const currentCalendarYear = now.getFullYear();
+  const currentCalendarMonth = now.getMonth() + 1;
+
   const [years, setYears] = useState<YearSummary[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedYear, setSelectedYear] = useState<number>(currentCalendarYear);
   const [report, setReport] = useState<YearReportData | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
-  const [selectedMonth, setSelectedMonth] = useState<number>(10);
+  const [selectedMonth, setSelectedMonth] = useState<number>(currentCalendarMonth);
   const [selectedKelurahan, setSelectedKelurahan] = useState<number>(0);
   const [selectedSheet, setSelectedSheet] = useState<'kunjungan' | 'layanan'>('kunjungan');
 
@@ -60,7 +64,7 @@ export default function App() {
     showToast('err', err instanceof Error ? err.message : fallback);
   };
 
-  const loadYearData = async (yearToLoad: number, pickLatestMonth = false) => {
+  const loadYearData = async (yearToLoad: number, pickDefaultMonth = false) => {
     setIsLoading(true);
     try {
       const [yrs, rep] = await Promise.all([fetchYears(), fetchReport(yearToLoad)]);
@@ -68,13 +72,17 @@ export default function App() {
       setReport(rep);
       setSelectedYear(rep.year);
 
-      if (pickLatestMonth) {
-        const computed = computeYearKunjungan(rep.kunjungan);
-        let latest = 1;
-        for (let m = 1; m <= 12; m++) {
-          if (computed[m].filledCount > 0) latest = m;
+      if (pickDefaultMonth) {
+        if (rep.year === currentCalendarYear) {
+          setSelectedMonth(currentCalendarMonth);
+        } else {
+          const computed = computeYearKunjungan(rep.kunjungan);
+          let latest = 1;
+          for (let m = 1; m <= 12; m++) {
+            if (computed[m].filledCount > 0) latest = m;
+          }
+          setSelectedMonth(latest);
         }
-        setSelectedMonth(latest);
       }
     } catch (err) {
       handleApiError(err, 'Gagal memuat data.');

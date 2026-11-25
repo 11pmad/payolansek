@@ -111,12 +111,6 @@ const KUNJUNGAN_ACTIVITY_KEYS: (keyof KunjunganInput)[] = [
   'lg60_69P',
   'lg70L',
   'lg70P',
-  'kem60_69A',
-  'kem60_69B',
-  'kem60_69C',
-  'kem70A',
-  'kem70B',
-  'kem70C',
 ];
 
 export function hasKunjunganActivity(row: KunjunganInput): boolean {

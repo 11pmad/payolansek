@@ -7,11 +7,12 @@ import {
   LogOut,
   Settings,
   Table2,
+  TrendingUp,
   Upload,
 } from 'lucide-react';
 import { KELURAHAN_LIST, type AuthUser, type YearSummary } from '../../shared/types.js';
 
-export type NavTab = 'dashboard' | 'input' | 'table' | 'settings';
+export type NavTab = 'dashboard' | 'analytics' | 'input' | 'table' | 'settings';
 
 interface AppHeaderProps {
   user: AuthUser;
@@ -30,6 +31,7 @@ interface AppHeaderProps {
 
 const NAV_ITEMS: Array<{ id: NavTab; label: string; icon: typeof BarChart3 }> = [
   { id: 'dashboard', label: 'Ringkasan', icon: BarChart3 },
+  { id: 'analytics', label: 'Analisis', icon: TrendingUp },
   { id: 'input', label: 'Input Laporan', icon: ClipboardEdit },
   { id: 'table', label: 'Pratinjau Tabel', icon: Table2 },
   { id: 'settings', label: 'Pengaturan', icon: Settings },

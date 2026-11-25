@@ -23,6 +23,7 @@ import {
   saveSettings,
 } from './api.js';
 import { AppHeader, type NavTab } from './components/AppHeader.js';
+import { AnalyticsView } from './components/AnalyticsView.js';
 import { DashboardView } from './components/DashboardView.js';
 import { InputWorkspace } from './components/InputWorkspace.js';
 import { LoginView } from './components/LoginView.js';
@@ -294,6 +295,16 @@ export default function App() {
                   setSelectedSheet(sh);
                   setActiveTab('input');
                 }}
+              />
+            )}
+
+            {activeTab === 'analytics' && (
+              <AnalyticsView
+                year={report.year}
+                selectedMonth={selectedMonth}
+                onChangeMonth={setSelectedMonth}
+                kunjunganYear={kunjunganYear}
+                layananYear={layananYear}
               />
             )}
 
